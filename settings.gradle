@@ -1,0 +1,4 @@
+include ':myEventBus'
+include ':libdemo'
+include ':app'
+rootProject.name = "WXXEventBus"
