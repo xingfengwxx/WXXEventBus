@@ -20,7 +20,7 @@ public class EventBus {
 
     private static final Map<Class<?>, List<SubscriberMethod>> METHOD_CACHE = new HashMap<>();
 
-    private final Map<Class<?>, CopyOnWriteArrayList<Subscription>> mSubscriptionsByEvent;
+    private final Map<Class<?>, CopyOnWriteArrayList<Subscription>> mSubscriptionsByEventType;
 
     private final Map<Object, List<Class<?>>> mTypesBySubscriber;
 
@@ -38,7 +38,7 @@ public class EventBus {
     }
 
     private EventBus() {
-        mSubscriptionsByEvent = new HashMap<>();
+        mSubscriptionsByEventType = new HashMap<>();
         mTypesBySubscriber = new HashMap<>();
         mExecutor = Executors.newCachedThreadPool();
     }
@@ -47,7 +47,38 @@ public class EventBus {
     public void register(Object subscriber) {
         // 先查找出所有的符合条件的订阅方法
         Class<?> clazz = subscriber.getClass();
+        List<SubscriberMethod> subscriberMethods = findSubscriberMethods(clazz);
 
+        // 遍历所有的订阅方法，然后进行订阅
+        if (subscriberMethods != null && !subscriberMethods.isEmpty()) {
+            for (SubscriberMethod subscriberMethod : subscriberMethods) {
+                subscriber(subscriber, subscriberMethod);
+            }
+        }
+    }
+
+    // 对一个方法进行注册订阅
+    // 把这个方法相关信息，以eventType为key，保存到subscriptionsByEventType
+    // 把这个订阅者对象和它的所有订阅方法的参数类型集合，以key-value形式保存在typesBySubscriber
+    private void subscriber(Object subscriber, SubscriberMethod subscriberMethod) {
+        Class<?> eventType = subscriberMethod.eventType;
+        CopyOnWriteArrayList<Subscription> subscriptions = mSubscriptionsByEventType.get(eventType);
+        if (subscriptions == null) {
+            subscriptions = new CopyOnWriteArrayList<>();
+            mSubscriptionsByEventType.put(eventType, subscriptions);
+        }
+
+        // 对当前订阅类和它的订阅方法相关信息进行包装
+        Subscription subscription = new Subscription(subscriber, subscriberMethod);
+        subscriptions.add(subscription);
+
+        // typesBySubscriber
+        List<Class<?>> types = mTypesBySubscriber.get(subscriber);
+        if (types == null) {
+            types = new ArrayList<>();
+            mTypesBySubscriber.put(subscriber, types);
+        }
+        types.add(eventType);
     }
 
     /**
@@ -103,7 +134,7 @@ public class EventBus {
     // [2]进行post传递消息
     public void post(Object event) {
         Class<?> eventType = event.getClass();
-        List<Subscription> subscriptions = mSubscriptionsByEvent.get(eventType);
+        List<Subscription> subscriptions = mSubscriptionsByEventType.get(eventType);
         if (subscriptions != null && !subscriptions.isEmpty()) {
             for (Subscription subscription : subscriptions) {
                 postSingleSubscription(subscription, event);
@@ -166,7 +197,7 @@ public class EventBus {
         List<Class<?>> types = mTypesBySubscriber.get(subscriber);
         // 遍历所有参数类型集合
         for (Class<?> eventType : types) {
-            List<Subscription> subscriptions = mSubscriptionsByEvent.get(eventType);
+            List<Subscription> subscriptions = mSubscriptionsByEventType.get(eventType);
             int size = subscriptions.size();
             for (int i = 0; i < size; i++) {
                 Subscription subscription = subscriptions.get(i);
